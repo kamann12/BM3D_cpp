@@ -17,10 +17,6 @@ FILE *openfile(const char *fname, const char *mode)
 
 int main()
 {
-	int w = 160, h = 120;
-	int chnl = 1;			// YUV 4:0:0 or 4:4:4
-
-	int en_bm3d_step2 = 0;	// enable step2 of bm3d
 	int sigma_step1 = 36;	// here same for Y/U/V, can be different
 	int sigma_step2 = 25;	// bigger for smoother, usually a little smaller than step1
 
@@ -30,25 +26,26 @@ int main()
 	FILE *inf = openfile("test/in.yuv", "rb");
 	FILE *ouf = openfile("test/out.yuv", "wb");
 	
-	ImageType *noisy = new ImageType[w * h * chnl];
-	ImageType *clean = new ImageType[w * h * chnl];
+	printf("Width: %d, Height: %d\n", BM3D_ORIG_W, BM3D_ORIG_H);
+	ImageType *noisy = new ImageType[BM3D_ORIG_W * BM3D_ORIG_H];
+	ImageType *clean = new ImageType[BM3D_ORIG_W * BM3D_ORIG_H];
 
 	/* hard-thresholding denoiser
 	 */ 
 	BM3D *denoiser = NULL;
-	denoiser = new BM3D(w, h, 16, 8, 3, 16, 1, 16, 1); // at present the psize must be 8
+	denoiser = new BM3D(); // パラメータは定数マクロで固定
 
 	int frame = 0;
-	while (frames < 0 ||frame < frames)
+	while (frames < 0 || frame < frames)
 	{
-		if (fread(noisy, sizeof(ImageType), w * h * chnl, inf) != w * h * chnl) break;
+		if (fread(noisy, sizeof(ImageType), BM3D_ORIG_W * BM3D_ORIG_H, inf) != BM3D_ORIG_W * BM3D_ORIG_H) break;
 		cout << "Processing frame " << frame << "..." << endl;
 
 		// hard thresholding
 		denoiser->load(noisy, sigma_step1);
 		denoiser->run(clean);
 
-		fwrite(clean, sizeof(ImageType), w * h * chnl, ouf);
+		fwrite(clean, sizeof(ImageType), BM3D_ORIG_W * BM3D_ORIG_H, ouf);
 
 		cout << "Frame " << frame << " done!" << endl << endl;
 		frame++;
