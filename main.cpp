@@ -1,8 +1,7 @@
 #include <iostream>
 #include <string>
 #include <math.h>
-#include "cbm3d.h"
-#include "cbm3d_wiener.h"
+#include "bm3d.h"
 using namespace std;
 
 FILE *openfile(const char *fname, const char *mode)
