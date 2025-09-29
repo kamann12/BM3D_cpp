@@ -22,17 +22,7 @@ extern const PatchType Kaiser[64];
 class BM3D
 {
 public:
-	BM3D(
-		int w_,						// width
-		int h_,						// height
-		int max_sim = 16,			// maximum similar patches
-		int psize_  = 8,			// reference patch size
-		int pstep_  = 3,			// reference patch step
-		int swinrh_ = 16,			// horizontal search window radius
-		int ssteph_ = 1,			// horizontal search step
-		int swinrv_ = 16,			// vertical search window radius
-		int sstepv_ = 1				// vertical search step
-	);
+	BM3D();
 	virtual ~BM3D();
 
 	/* Load a new grayscale image and reset the buffers. */
@@ -70,39 +60,22 @@ public:
 	void shift_numer_denom();
 
 protected:
-	int orig_w;			// original image width
-	int orig_h;			// original image height
-	int w;				// padded image width
-	int h;				// padded image height
 	ImageType *noisy;	// padded noisy image
-
-	int psize;			// patch size
-	int pstep;			// reference patch step
-
-	int swinrh;			// horizontal search window radius
-	int ssteph;			// horizontal search step
-
-	int swinrv;			// vertical search window radius
-	int sstepv;			// vertical search step
 
 	Group3D *g3d;		// 3d group containg the reference patch and all its similar ones
 	ImageType *refer;	// reference patch pointer (top-left)
 
 	int row_cnt;		// counter of the processed rows of the original image
 
-	PatchType *numerator;		// size: w * (2 * swinrv + psize)
-	PatchType *denominator;		// size: w * (2 * swinrv + psize)
+	PatchType *numerator;		// size: w * (2 * BM3D_SWINRV + BM3D_PSIZE)
+	PatchType *denominator;		// size: w * (2 * BM3D_SWINRV + BM3D_PSIZE)
 	PatchType *numer;			// template pointer
 	PatchType *denom;			// template pointer
 
 	DistType *dist_buf;		// sliding buffer to record the distances step by step
 	DistType *dist_sum;		// distances buffer of each candidate patch
 
-	int nbuf;				// number of steps in a single patch, ceil(psize / pstep)
 	int ncnt;				// counter of the steps
-
-	int nsh;				// number of horizontal candidate patches in a searching window
-	int nsv;				// number of vertical candidate patches in a searching window
 
 	clock_t gtime;			// timer of the grouping step
 	clock_t ftime;			// timer of the filtering step

@@ -29,6 +29,24 @@ typedef float PatchType;
 
 #endif
 
+#define BM3D_ORIG_W   (160)
+#define BM3D_ORIG_H   (120)
+#define BM3D_MAX_SIM  (16)
+#define BM3D_PSIZE    (8)
+#define BM3D_PSTEP    (3)
+#define BM3D_SWINRH   (16)
+#define BM3D_SSTEPH   (1)
+#define BM3D_SWINRV   (16)
+#define BM3D_SSTEPV   (1)
+
+#define BM3D_W_PAD   ((BM3D_ORIG_W - BM3D_PSIZE + BM3D_PSTEP - 1) / BM3D_PSTEP * BM3D_PSTEP + BM3D_PSIZE - BM3D_ORIG_W)
+#define BM3D_H_PAD   ((BM3D_ORIG_H - BM3D_PSIZE + BM3D_PSTEP - 1) / BM3D_PSTEP * BM3D_PSTEP + BM3D_PSIZE - BM3D_ORIG_H)
+#define BM3D_W		 (BM3D_ORIG_W + BM3D_W_PAD + BM3D_SWINRH * 2)
+#define BM3D_H       (BM3D_ORIG_H + BM3D_H_PAD + BM3D_SWINRV * 2)
+
+#define BM3D_NBUF ((BM3D_PSIZE + BM3D_PSTEP - 1) / BM3D_PSTEP)
+#define BM3D_NSH  ((2 * BM3D_SWINRH + BM3D_SSTEPH) / BM3D_SSTEPH)
+#define BM3D_NSV  ((2 * BM3D_SWINRV + BM3D_SSTEPV) / BM3D_SSTEPV)
 
 #endif
 

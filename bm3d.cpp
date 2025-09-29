@@ -35,42 +35,18 @@ static inline DistType get_dist(ImageType a, ImageType b)
 #endif
 }
 
-BM3D::BM3D(
-	int w_,					// width
-	int h_,					// height
-	int max_sim,			// maximum similar patches
-	int psize_,				// reference patch size
-	int pstep_,				// reference patch step
-	int swinrh_,			// horizontal search window radius
-	int ssteph_,			// horizontal search step
-	int swinrv_,			// vertical search window radius
-	int sstepv_			// vertical search step
-) : orig_w(w_), orig_h(h_), psize(psize_), pstep(pstep_),
-	swinrh(swinrh_), ssteph(ssteph_), swinrv(swinrv_), sstepv(sstepv_)
+BM3D::BM3D()
 {
-	// pad the last patch to ensure a completed step (copy the last row/column)
-	int w_pad = (orig_w - psize + pstep - 1) / pstep * pstep + psize - orig_w;
-	int h_pad = (orig_h - psize + pstep - 1) / pstep * pstep + psize - orig_h;
+    g3d   = new Group3D(BM3D_PSIZE, BM3D_PSIZE, BM3D_MAX_SIM);
+    noisy = new ImageType[BM3D_W * BM3D_H]();
 
-	// pad the surrounding with half search window (zero padding)
-	w = orig_w + w_pad + swinrh * 2;
-	h = orig_h + h_pad + swinrv * 2;
+    numerator   = new PatchType[BM3D_W * (BM3D_PSIZE + BM3D_SWINRV * 2)];
+    denominator = new PatchType[BM3D_W * (BM3D_PSIZE + BM3D_SWINRV * 2)];
 
-	g3d   = new Group3D(psize, psize, max_sim);
-	noisy = new ImageType[w * h]();
+    dist_buf = new DistType[BM3D_NSH * BM3D_NSV * BM3D_NBUF];
+    dist_sum = new DistType[BM3D_NSH * BM3D_NSV];
 
-	numerator   = new PatchType[w * (psize + swinrv * 2)];
-	denominator = new PatchType[w * (psize + swinrv * 2)];
-
-	// the distances computed by the last patch can be partially reused when stepping forward
-	nbuf = (psize + pstep - 1) / pstep;
-	nsh  = (2 * swinrh + ssteph) / ssteph;
-	nsv  = (2 * swinrv + sstepv) / sstepv;
-
-	dist_buf = new DistType[nsh * nsv * nbuf];
-	dist_sum = new DistType[nsh * nsv];
-
-	row_cnt = h;	// avoid processing without the noisy image initialization
+    row_cnt = BM3D_H;	// avoid processing without the noisy image initialization
 }
 
 BM3D::~BM3D()
@@ -108,38 +84,35 @@ void BM3D::run(ImageType *clean)
 
 void BM3D::reset()
 {
-	row_cnt = 0;
-	memset(numerator,   0, (psize + swinrv * 2) * w * sizeof(PatchType));
-	memset(denominator, 0, (psize + swinrv * 2) * w * sizeof(PatchType));
+    row_cnt = 0;
+    memset(numerator,   0, (BM3D_PSIZE + BM3D_SWINRV * 2) * BM3D_W * sizeof(PatchType));
+    memset(denominator, 0, (BM3D_PSIZE + BM3D_SWINRV * 2) * BM3D_W * sizeof(PatchType));
 }
 
 void BM3D::load(ImageType *org_noisy, int sigma, DistType max_mdist, int sigmau, int sigmav)
 {
-	row_cnt = 0;
-	g3d->set_thresholds(sigma, max_mdist * psize * psize);
+    row_cnt = 0;
+    g3d->set_thresholds(sigma, max_mdist * BM3D_PSIZE * BM3D_PSIZE);
 
-	int w_pad = w - 2 * swinrh - orig_w;
-	int h_pad = h - 2 * swinrv - orig_h;
-
-	ImageType *tmp_noisy = noisy + swinrv * w + swinrh;
-	for (int i = 0; i < orig_h; i++)
-	{
-		memcpy(tmp_noisy, org_noisy, orig_w * sizeof(ImageType));
-		for (int j = 0; j < w_pad; j++)
-		{
-			// edge padding
-			tmp_noisy[orig_w + j] = tmp_noisy[orig_w + j - 1];
-		}
-		tmp_noisy += w;
-		org_noisy += orig_w;
-	}
-	for (int i = 0; i < h_pad; i++)
-	{
-		memcpy(tmp_noisy, tmp_noisy - w, (orig_w + w_pad) * sizeof(ImageType));
-		tmp_noisy += w;
-	}
-	memset(numerator,   0, (psize + swinrv * 2) * w * sizeof(PatchType));
-	memset(denominator, 0, (psize + swinrv * 2) * w * sizeof(PatchType));
+    ImageType *tmp_noisy = noisy + BM3D_SWINRV * BM3D_W + BM3D_SWINRH;
+    for (int i = 0; i < BM3D_ORIG_H; i++)
+    {
+        memcpy(tmp_noisy, org_noisy, BM3D_ORIG_W * sizeof(ImageType));
+        for (int j = 0; j < BM3D_W_PAD; j++)
+        {
+            // edge padding
+            tmp_noisy[BM3D_ORIG_W + j] = tmp_noisy[BM3D_ORIG_W + j - 1];
+        }
+        tmp_noisy += BM3D_W;
+        org_noisy += BM3D_ORIG_W;
+    }
+    for (int i = 0; i < BM3D_H_PAD; i++)
+    {
+        memcpy(tmp_noisy, tmp_noisy - BM3D_W, (BM3D_ORIG_W + BM3D_W_PAD) * sizeof(ImageType));
+        tmp_noisy += BM3D_W;
+    }
+    memset(numerator,   0, (BM3D_PSIZE + BM3D_SWINRV * 2) * BM3D_W * sizeof(PatchType));
+    memset(denominator, 0, (BM3D_PSIZE + BM3D_SWINRV * 2) * BM3D_W * sizeof(PatchType));
 }
 
 /* Porcess a line of reference patches, the location of the line is recorded by (this->row_cnt).
@@ -156,142 +129,142 @@ void BM3D::load(ImageType *org_noisy, int sigma, DistType max_mdist, int sigmau,
  */
 int BM3D::next_line(ImageType *clean)
 {
-	if (row_cnt >= orig_h + pstep - psize) return -1;	// beyond the last line of reference patches
+    if (row_cnt >= BM3D_ORIG_H + BM3D_PSTEP - BM3D_PSIZE) return -1;	// beyond the last line of reference patches
 
-	refer = noisy + (row_cnt + swinrv) * w + swinrh;	// the first reference patch of the line
-	numer = numerator   + swinrv * w + swinrh;
-	denom = denominator + swinrv * w + swinrh;
+    refer = noisy + (row_cnt + BM3D_SWINRV) * BM3D_W + BM3D_SWINRH;	// the first reference patch of the line
+    numer = numerator   + BM3D_SWINRV * BM3D_W + BM3D_SWINRH;
+    denom = denominator + BM3D_SWINRV * BM3D_W + BM3D_SWINRH;
 
-	memset(dist_buf, 0, nsh * nsv * nbuf * sizeof(DistType));
-	memset(dist_sum, 0, nsh * nsv * sizeof(DistType));
+    memset(dist_buf, 0, BM3D_NSH * BM3D_NSV * BM3D_NBUF * sizeof(DistType));
+    memset(dist_sum, 0, BM3D_NSH * BM3D_NSV * sizeof(DistType));
 
-	// initialize the distance buffer
-#pragma omp parallel for num_threads(USE_THREADS_NUM)
-	for (int sy = -swinrv; sy <= swinrv; sy += sstepv)
-	{
-		for (int sx = -swinrh; sx <= swinrh; sx += ssteph)
-		{
-			int idx = (sy + swinrv) / sstepv * nsh + (sx + swinrh) / ssteph;
-			for (int y = 0; y < psize; y++)
-			{
-				for (int x = 0; x < psize - pstep; x++)
-				{
-					dist_buf[nbuf * idx + x / pstep] += get_dist(refer[y * w + x], refer[(y + sy) * w + x + sx]);
-				}
-			}
-			for (int i = 0; i < nbuf - 2; i++) {
-				dist_sum[idx] += dist_buf[nbuf * idx + i];
-			}
-		}
-	}
-	ncnt = nbuf;
+    // initialize the distance buffer
+    #pragma omp parallel for num_threads(USE_THREADS_NUM)
+    for (int sy = -BM3D_SWINRV; sy <= BM3D_SWINRV; sy += BM3D_SSTEPV)
+    {
+        for (int sx = -BM3D_SWINRH; sx <= BM3D_SWINRH; sx += BM3D_SSTEPH)
+        {
+            int idx = (sy + BM3D_SWINRV) / BM3D_SSTEPV * BM3D_NSH + (sx + BM3D_SWINRH) / BM3D_SSTEPH;
+            for (int y = 0; y < BM3D_PSIZE; y++)
+            {
+                for (int x = 0; x < BM3D_PSIZE - BM3D_PSTEP; x++)
+                {
+                    dist_buf[BM3D_NBUF * idx + x / BM3D_PSTEP] += get_dist(refer[y * BM3D_W + x], refer[(y + sy) * BM3D_W + x + sx]);
+                }
+            }
+            for (int i = 0; i < BM3D_NBUF - 2; i++) {
+                dist_sum[idx] += dist_buf[BM3D_NBUF * idx + i];
+            }
+        }
+    }
+    ncnt = BM3D_NBUF;
 
-	clock_t t;
-	// proceesing the line
-	for (int x = 0; x < orig_w + pstep - psize; x += pstep, ncnt++)
-	{
-		t = clock();
-		grouping();
-		gtime += clock() - t;
+    clock_t t;
+    // proceesing the line
+    for (int x = 0; x < BM3D_ORIG_W + BM3D_PSTEP - BM3D_PSIZE; x += BM3D_PSTEP, ncnt++)
+    {
+        t = clock();
+        grouping();
+        gtime += clock() - t;
 
-		t = clock();
-		filtering();
-		ftime += clock() - t;
+        t = clock();
+        filtering();
+        ftime += clock() - t;
 
-		t = clock();
-		aggregation();
-		atime += clock() - t;
+        t = clock();
+        aggregation();
+        atime += clock() - t;
 
-		refer += pstep;
-		numer += pstep;
-		denom += pstep;
-	}
+        refer += BM3D_PSTEP;
+        numer += BM3D_PSTEP;
+        denom += BM3D_PSTEP;
+    }
 
-	// output the completed rows
-	numer = numerator   + swinrh;
-	denom = denominator + swinrh;
+    // output the completed rows
+    numer = numerator   + BM3D_SWINRH;
+    denom = denominator + BM3D_SWINRH;
 
-	int output_rows;
-	if (row_cnt < swinrv) 
-	{
-		if (row_cnt + pstep <= swinrv) {
-			// no row is completed in the begining
-			output_rows = 0;
-		}
-		else {
-			output_rows = row_cnt + pstep - swinrv;
-			numer += (pstep - output_rows) * w;
-			denom += (pstep - output_rows) * w;
-		}
-	} 
-	else 
-	{
-		if (row_cnt >= orig_h - psize)
-			output_rows = orig_h - row_cnt + swinrv;	// the last line of reference patches
-		else
-			output_rows = pstep;
-		clean += orig_w * (row_cnt - swinrv);
-	}
+    int output_rows;
+    if (row_cnt < BM3D_SWINRV) 
+    {
+        if (row_cnt + BM3D_PSTEP <= BM3D_SWINRV) {
+            // no row is completed in the begining
+            output_rows = 0;
+        }
+        else {
+            output_rows = row_cnt + BM3D_PSTEP - BM3D_SWINRV;
+            numer += (BM3D_PSTEP - output_rows) * BM3D_W;
+            denom += (BM3D_PSTEP - output_rows) * BM3D_W;
+        }
+    } 
+    else 
+    {
+        if (row_cnt >= BM3D_ORIG_H - BM3D_PSIZE)
+            output_rows = BM3D_ORIG_H - row_cnt + BM3D_SWINRV;	// the last line of reference patches
+        else
+            output_rows = BM3D_PSTEP;
+        clean += BM3D_ORIG_W * (row_cnt - BM3D_SWINRV);
+    }
 
-	for (int i = 0, r = 0; r < output_rows; r++)
-	{
-		for (int c = 0; c < orig_w; c++, i++)
-		{
-			clean[i] = (ImageType)(numer[c] / denom[c]);
-		}
-		numer += w;
-		denom += w;
-	}
+    for (int i = 0, r = 0; r < output_rows; r++)
+    {
+        for (int c = 0; c < BM3D_ORIG_W; c++, i++)
+        {
+            clean[i] = (ImageType)(numer[c] / denom[c]);
+        }
+        numer += BM3D_W;
+        denom += BM3D_W;
+    }
 
-	// remove the fisrt (pstep) rows of the numerator and denominator buffers
-	// and insert (pstep) new rows to the end of the buffers
-	shift_numer_denom();
+    // remove the fisrt (pstep) rows of the numerator and denominator buffers
+    // and insert (pstep) new rows to the end of the buffers
+    shift_numer_denom();
 
-	row_cnt += pstep;
-	return output_rows;
+    row_cnt += BM3D_PSTEP;
+    return output_rows;
 }
 
 void BM3D::grouping()
 {
-#pragma omp parallel for num_threads(USE_THREADS_NUM)
-	for (int sy = -swinrv; sy <= swinrv; sy += sstepv)
-	{
-		for (int sx = -swinrh; sx <= swinrh; sx += ssteph)
-		{
-			int idx = (sy + swinrv) / sstepv * nsh + (sx + swinrh) / ssteph;
-			for (int y = 0; y < psize; y++)
-			{
-				for (int x = psize - pstep; x < psize; x++)
-				{
-					dist_buf[nbuf * idx + (ncnt + x / pstep) % nbuf] += get_dist(refer[y * w + x], refer[(y + sy) * w + x + sx]);
-				}
-			}
-			dist_sum[idx] += dist_buf[nbuf * idx + (ncnt - 2) % nbuf];
-			dist_sum[idx] += dist_buf[nbuf * idx + (ncnt - 1) % nbuf];
-		}
-	}
+    #pragma omp parallel for num_threads(USE_THREADS_NUM)
+    for (int sy = -BM3D_SWINRV; sy <= BM3D_SWINRV; sy += BM3D_SSTEPV)
+    {
+        for (int sx = -BM3D_SWINRH; sx <= BM3D_SWINRH; sx += BM3D_SSTEPH)
+        {
+            int idx = (sy + BM3D_SWINRV) / BM3D_SSTEPV * BM3D_NSH + (sx + BM3D_SWINRH) / BM3D_SSTEPH;
+            for (int y = 0; y < BM3D_PSIZE; y++)
+            {
+                for (int x = BM3D_PSIZE - BM3D_PSTEP; x < BM3D_PSIZE; x++)
+                {
+                    dist_buf[BM3D_NBUF * idx + (ncnt + x / BM3D_PSTEP) % BM3D_NBUF] += get_dist(refer[y * BM3D_W + x], refer[(y + sy) * BM3D_W + x + sx]);
+                }
+            }
+            dist_sum[idx] += dist_buf[BM3D_NBUF * idx + (ncnt - 2) % BM3D_NBUF];
+            dist_sum[idx] += dist_buf[BM3D_NBUF * idx + (ncnt - 1) % BM3D_NBUF];
+        }
+    }
 
-	g3d->set_reference();
-	for (int idx = 0, sy = -swinrv; sy <= swinrv; sy += sstepv)
-	{
-		for (int sx = -swinrh; sx <= swinrh; sx += ssteph, idx++)
-		{
-			g3d->insert_patch(sx, sy, dist_sum[idx]);
-		}
-	}
-#pragma omp parallel for num_threads(USE_THREADS_NUM)
-	for (int i = 0; i < nsv; i++)
-	{
-		for (int j = 0; j < nsh; j++)
-		{
-			int idx = i * nsh + j;
-			dist_sum[idx] -= dist_buf[nbuf * idx + (ncnt - 1) % nbuf];
-			dist_sum[idx] -= dist_buf[nbuf * idx + (ncnt - 0) % nbuf];
-			dist_buf[nbuf * idx + ncnt % nbuf] = 0;
-		}
-	}
+    g3d->set_reference();
+    for (int idx = 0, sy = -BM3D_SWINRV; sy <= BM3D_SWINRV; sy += BM3D_SSTEPV)
+    {
+        for (int sx = -BM3D_SWINRH; sx <= BM3D_SWINRH; sx += BM3D_SSTEPH, idx++)
+        {
+            g3d->insert_patch(sx, sy, dist_sum[idx]);
+        }
+    }
+    #pragma omp parallel for num_threads(USE_THREADS_NUM)
+    for (int i = 0; i < BM3D_NSV; i++)
+    {
+        for (int j = 0; j < BM3D_NSH; j++)
+        {
+            int idx = i * BM3D_NSH + j;
+            dist_sum[idx] -= dist_buf[BM3D_NBUF * idx + (ncnt - 1) % BM3D_NBUF];
+            dist_sum[idx] -= dist_buf[BM3D_NBUF * idx + (ncnt - 0) % BM3D_NBUF];
+            dist_buf[BM3D_NBUF * idx + ncnt % BM3D_NBUF] = 0;
+        }
+    }
 
-	g3d->fill_patches_values(refer, w);
+    g3d->fill_patches_values(refer, BM3D_W);
 }
 
 void BM3D::filtering()
@@ -303,33 +276,33 @@ void BM3D::filtering()
 
 void BM3D::aggregation()
 {
-	PatchType weight = g3d->get_weight();
-	for (int p = 0; p < g3d->num; p++)
-	{
-		int x = g3d->patch[p]->x;
-		int y = g3d->patch[p]->y;
-		for (int i = 0, r = 0; r < psize; r++)
-		{
-			for (int c = 0; c < psize; c++, i++)
-			{
-				numer[(r + y) * w + c + x] += Kaiser[i] * weight * g3d->patch[p]->values[i];
-				denom[(r + y) * w + c + x] += Kaiser[i] * weight;
-			}
-		}
-	}
+    PatchType weight = g3d->get_weight();
+    for (int p = 0; p < g3d->num; p++)
+    {
+        int x = g3d->patch[p]->x;
+        int y = g3d->patch[p]->y;
+        for (int i = 0, r = 0; r < BM3D_PSIZE; r++)
+        {
+            for (int c = 0; c < BM3D_PSIZE; c++, i++)
+            {
+                numer[(r + y) * BM3D_W + c + x] += Kaiser[i] * weight * g3d->patch[p]->values[i];
+                denom[(r + y) * BM3D_W + c + x] += Kaiser[i] * weight;
+            }
+        }
+    }
 }
 
 void BM3D::shift_numer_denom()
 {
-	numer = numerator;
-	denom = denominator;
-	for (int i = 0; i < 2 * swinrv + psize - pstep; i++)
-	{
-		memcpy(numer, numer + w * pstep, w * sizeof(PatchType));
-		memcpy(denom, denom + w * pstep, w * sizeof(PatchType));
-		numer += w;
-		denom += w;
-	}
-	memset(numer, 0, w * pstep * sizeof(PatchType));
-	memset(denom, 0, w * pstep * sizeof(PatchType));
+    numer = numerator;
+    denom = denominator;
+    for (int i = 0; i < 2 * BM3D_SWINRV + BM3D_PSIZE - BM3D_PSTEP; i++)
+    {
+        memcpy(numer, numer + BM3D_W * BM3D_PSTEP, BM3D_W * sizeof(PatchType));
+        memcpy(denom, denom + BM3D_W * BM3D_PSTEP, BM3D_W * sizeof(PatchType));
+        numer += BM3D_W;
+        denom += BM3D_W;
+    }
+    memset(numer, 0, BM3D_W * BM3D_PSTEP * sizeof(PatchType));
+    memset(denom, 0, BM3D_W * BM3D_PSTEP * sizeof(PatchType));
 }
