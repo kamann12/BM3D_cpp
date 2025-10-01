@@ -43,7 +43,6 @@ BM3D::BM3D()
     numerator   = new PatchType[BM3D_W * (BM3D_PSIZE + BM3D_SWINRV * 2)];
     denominator = new PatchType[BM3D_W * (BM3D_PSIZE + BM3D_SWINRV * 2)];
 
-    dist_buf = new DistType[BM3D_NSH * BM3D_NSV * BM3D_NBUF];
     dist_sum = new DistType[BM3D_NSH * BM3D_NSV];
 
     row_cnt = BM3D_H;	// avoid processing without the noisy image initialization
@@ -55,7 +54,6 @@ BM3D::~BM3D()
 	delete[] noisy;
 	delete[] numerator;
 	delete[] denominator;
-	delete[] dist_buf;
 	delete[] dist_sum;
 }
 
@@ -135,29 +133,8 @@ int BM3D::next_line(ImageType *clean)
     numer = numerator   + BM3D_SWINRV * BM3D_W + BM3D_SWINRH;
     denom = denominator + BM3D_SWINRV * BM3D_W + BM3D_SWINRH;
 
-    memset(dist_buf, 0, BM3D_NSH * BM3D_NSV * BM3D_NBUF * sizeof(DistType));
     memset(dist_sum, 0, BM3D_NSH * BM3D_NSV * sizeof(DistType));
-
-    // initialize the distance buffer
-    #pragma omp parallel for num_threads(USE_THREADS_NUM)
-    for (int sy = -BM3D_SWINRV; sy <= BM3D_SWINRV; sy += BM3D_SSTEPV)
-    {
-        for (int sx = -BM3D_SWINRH; sx <= BM3D_SWINRH; sx += BM3D_SSTEPH)
-        {
-            int idx = (sy + BM3D_SWINRV) / BM3D_SSTEPV * BM3D_NSH + (sx + BM3D_SWINRH) / BM3D_SSTEPH;
-            for (int y = 0; y < BM3D_PSIZE; y++)
-            {
-                for (int x = 0; x < BM3D_PSIZE - BM3D_PSTEP; x++)
-                {
-                    dist_buf[BM3D_NBUF * idx + x / BM3D_PSTEP] += get_dist(refer[y * BM3D_W + x], refer[(y + sy) * BM3D_W + x + sx]);
-                }
-            }
-            for (int i = 0; i < BM3D_NBUF - 2; i++) {
-                dist_sum[idx] += dist_buf[BM3D_NBUF * idx + i];
-            }
-        }
-    }
-    ncnt = BM3D_NBUF;
+    ncnt = 0;
 
     clock_t t;
     // proceesing the line
@@ -232,15 +209,15 @@ void BM3D::grouping()
         for (int sx = -BM3D_SWINRH; sx <= BM3D_SWINRH; sx += BM3D_SSTEPH)
         {
             int idx = (sy + BM3D_SWINRV) / BM3D_SSTEPV * BM3D_NSH + (sx + BM3D_SWINRH) / BM3D_SSTEPH;
+            DistType sum = 0;
             for (int y = 0; y < BM3D_PSIZE; y++)
             {
-                for (int x = BM3D_PSIZE - BM3D_PSTEP; x < BM3D_PSIZE; x++)
+                for (int x = 0; x < BM3D_PSIZE; x++)
                 {
-                    dist_buf[BM3D_NBUF * idx + (ncnt + x / BM3D_PSTEP) % BM3D_NBUF] += get_dist(refer[y * BM3D_W + x], refer[(y + sy) * BM3D_W + x + sx]);
+                    sum += get_dist(refer[y * BM3D_W + x], refer[(y + sy) * BM3D_W + x + sx]);
                 }
             }
-            dist_sum[idx] += dist_buf[BM3D_NBUF * idx + (ncnt - 2) % BM3D_NBUF];
-            dist_sum[idx] += dist_buf[BM3D_NBUF * idx + (ncnt - 1) % BM3D_NBUF];
+            dist_sum[idx] = sum;
         }
     }
 
@@ -250,17 +227,6 @@ void BM3D::grouping()
         for (int sx = -BM3D_SWINRH; sx <= BM3D_SWINRH; sx += BM3D_SSTEPH, idx++)
         {
             g3d->insert_patch(sx, sy, dist_sum[idx]);
-        }
-    }
-    #pragma omp parallel for num_threads(USE_THREADS_NUM)
-    for (int i = 0; i < BM3D_NSV; i++)
-    {
-        for (int j = 0; j < BM3D_NSH; j++)
-        {
-            int idx = i * BM3D_NSH + j;
-            dist_sum[idx] -= dist_buf[BM3D_NBUF * idx + (ncnt - 1) % BM3D_NBUF];
-            dist_sum[idx] -= dist_buf[BM3D_NBUF * idx + (ncnt - 0) % BM3D_NBUF];
-            dist_buf[BM3D_NBUF * idx + ncnt % BM3D_NBUF] = 0;
         }
     }
 

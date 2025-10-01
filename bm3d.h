@@ -72,7 +72,6 @@ protected:
 	PatchType *numer;			// template pointer
 	PatchType *denom;			// template pointer
 
-	DistType *dist_buf;		// sliding buffer to record the distances step by step
 	DistType *dist_sum;		// distances buffer of each candidate patch
 
 	int ncnt;				// counter of the steps
